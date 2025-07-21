@@ -1,5 +1,5 @@
 plugins {
-    alias(libs.plugins.android.application)
+    id("com.android.application")
 }
 
 android {
@@ -14,10 +14,12 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "TFLITE_MODEL", "\"Fruits.tflite\"")
     }
 
     buildTypes {
-        release {
+        getByName("release") {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -25,39 +27,63 @@ android {
             )
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+
     buildFeatures {
         mlModelBinding = true
+        buildConfig = true
+    }
+
+    sourceSets {
+        getByName("main") {
+            assets.srcDirs("src/main/assets")
+        }
+    }
+
+    applicationVariants.all {
+        val variantName = name
+        sourceSets {
+            getByName(variantName) {
+                java.srcDir("build/generated/ml_source_out/$variantName")
+            }
+        }
     }
 }
 
-val camerax_version = "1.4.2"
+val cameraxVersion = "1.4.2"
 
 dependencies {
-    implementation(libs.appcompat)
-    implementation(libs.material)
-    implementation(libs.activity)
-    implementation(libs.constraintlayout)
+    implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation("com.google.android.material:material:1.9.0")
+    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
 
     // CameraX dependencies
-    implementation("androidx.camera:camera-core:$camerax_version")
-    implementation("androidx.camera:camera-camera2:$camerax_version")
-    implementation("androidx.camera:camera-lifecycle:$camerax_version")
-    implementation("androidx.camera:camera-view:$camerax_version")
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-view:1.2.3")
 
-    // TensorFlow Lite for ML inference
-    implementation("org.tensorflow:tensorflow-lite:2.12.0")
+    // TensorFlow Lite dependencies with exclusions to avoid conflict with litert-api
+    implementation("org.tensorflow:tensorflow-lite:2.17.0") {
+        exclude(group = "com.google.ai.edge.litert", module = "litert-api")
+    }
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.3") {
+        exclude(group = "com.google.ai.edge.litert", module = "litert-api")
+    }
+    implementation("org.tensorflow:tensorflow-lite-metadata:0.4.3") {
+        exclude(group = "com.google.ai.edge.litert", module = "litert-api")
+    }
 
-    // Guava for ListenableFuture used by CameraX
+    // Guava (optional)
     implementation("com.google.guava:guava:31.0.1-android")
-    implementation(libs.camera.view)
 
-    testImplementation(libs.junit)
-    androidTestImplementation(libs.ext.junit)
-    androidTestImplementation(libs.espresso.core)
+    // Testing dependencies
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
 }
-
 

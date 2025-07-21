@@ -20,6 +20,8 @@ activity = { group = "androidx.activity", name = "activity", version.ref = "acti
 constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
 camera-core = { group = "androidx.camera", name = "camera-core", version.ref = "cameraCore" }
 camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "cameraView" }
+tensorflow-lite-support = { group = "org.tensorflow", name = "tensorflow-lite-support" }
+tensorflow-lite-metadata = { group = "org.tensorflow", name = "tensorflow-lite-metadata" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
