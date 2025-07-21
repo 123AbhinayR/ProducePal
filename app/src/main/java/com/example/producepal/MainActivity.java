@@ -3,32 +3,35 @@ package com.example.producepal;
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.res.AssetFileDescriptor;
 import android.graphics.Bitmap;
 import android.media.ThumbnailUtils;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.MediaStore;
+import android.util.Log;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
-import org.tensorflow.lite.DataType;
-import org.tensorflow.lite.support.tensorbuffer.TensorBuffer;
+import org.tensorflow.lite.Interpreter;
 
 import java.io.BufferedReader;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.List;
-
-import com.example.producepal.ml.Fruits;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -39,7 +42,7 @@ public class MainActivity extends AppCompatActivity {
     Button btnCamera, btnGallery, btnSearch;
     ImageView imageView;
     TextView tvResult;
-    int imageSize = 32;
+    int imageSize = 100;
     List<String> labels;
     String currentPrediction = null;
 
@@ -56,6 +59,10 @@ public class MainActivity extends AppCompatActivity {
 
         try {
             labels = loadLabels("labels.txt");
+            Log.d("Labels", "Loaded " + labels.size() + " labels");
+            if (labels.size() != 206) {
+                Toast.makeText(this, "Warning: Expected 206 labels, found " + labels.size(), Toast.LENGTH_LONG).show();
+            }
         } catch (IOException e) {
             Toast.makeText(this, "Failed to load labels", Toast.LENGTH_LONG).show();
             labels = new ArrayList<>();
@@ -92,18 +99,20 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (resultCode == RESULT_OK) {
+        if (resultCode == RESULT_OK && data != null) {
             Bitmap image = null;
-            if (requestCode == CAMERA_REQUEST_CODE) {
+            if (requestCode == CAMERA_REQUEST_CODE && data.getExtras() != null) {
                 image = (Bitmap) data.getExtras().get("data");
-                int dimension = Math.min(image.getWidth(), image.getHeight());
-                image = ThumbnailUtils.extractThumbnail(image, dimension, dimension);
-            } else if (requestCode == GALLERY_REQUEST_CODE && data != null) {
+                if (image != null) {
+                    int dimension = Math.min(image.getWidth(), image.getHeight());
+                    image = ThumbnailUtils.extractThumbnail(image, dimension, dimension);
+                }
+            } else if (requestCode == GALLERY_REQUEST_CODE) {
                 Uri dat = data.getData();
                 try {
                     image = MediaStore.Images.Media.getBitmap(this.getContentResolver(), dat);
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    Log.e("MainActivity", "Failed to load image from gallery", e);
                 }
             }
 
@@ -111,34 +120,43 @@ public class MainActivity extends AppCompatActivity {
                 imageView.setImageBitmap(image);
                 image = Bitmap.createScaledBitmap(image, imageSize, imageSize, false);
                 classifyImage(image);
+            } else {
+                Toast.makeText(this, "Failed to load image", Toast.LENGTH_SHORT).show();
             }
         }
     }
 
     private void classifyImage(Bitmap image) {
         try {
-            Fruits model = Fruits.newInstance(getApplicationContext());
-
-            TensorBuffer inputFeature0 = TensorBuffer.createFixedSize(new int[]{1, imageSize, imageSize, 3}, DataType.FLOAT32);
             ByteBuffer byteBuffer = ByteBuffer.allocateDirect(4 * imageSize * imageSize * 3);
             byteBuffer.order(ByteOrder.nativeOrder());
 
             int[] intValues = new int[imageSize * imageSize];
             image.getPixels(intValues, 0, image.getWidth(), 0, 0, image.getWidth(), image.getHeight());
+
+            float[] mean = {103.939f, 116.779f, 123.68f}; // BGR mean for ResNet
             int pixel = 0;
             for (int i = 0; i < imageSize; i++) {
                 for (int j = 0; j < imageSize; j++) {
                     int val = intValues[pixel++];
-                    byteBuffer.putFloat(((val >> 16) & 0xFF));
-                    byteBuffer.putFloat(((val >> 8) & 0xFF));
-                    byteBuffer.putFloat((val & 0xFF));
+                    float r = ((val >> 16) & 0xFF);
+                    float g = ((val >> 8) & 0xFF);
+                    float b = (val & 0xFF);
+
+                    byteBuffer.putFloat(b - mean[0]);
+                    byteBuffer.putFloat(g - mean[1]);
+                    byteBuffer.putFloat(r - mean[2]);
                 }
             }
 
-            inputFeature0.loadBuffer(byteBuffer);
+            float[] confidences = runModelInference(byteBuffer);
 
-            Fruits.Outputs outputs = model.process(inputFeature0);
-            float[] confidences = outputs.getOutputFeature0AsTensorBuffer().getFloatArray();
+            // Convert logits to probabilities using softmax
+            float sum = 0;
+            for (float val : confidences) sum += Math.exp(val);
+            for (int i = 0; i < confidences.length; i++) {
+                confidences[i] = (float) Math.exp(confidences[i]) / sum;
+            }
 
             int maxIdx = 0;
             float maxConf = 0;
@@ -150,14 +168,37 @@ public class MainActivity extends AppCompatActivity {
             }
 
             String resultLabel = (labels != null && labels.size() > maxIdx) ? labels.get(maxIdx) : "Unknown";
-            tvResult.setText(resultLabel);
+            String displayText = String.format("%s (%.2f%%)", resultLabel, maxConf * 100);
+            tvResult.setText(displayText);
             currentPrediction = resultLabel;
             btnSearch.setEnabled(true);
 
-            model.close();
-        } catch (IOException e) {
+            Log.d("Prediction", "Predicted: " + resultLabel + " (Confidence: " + maxConf + ")");
+        } catch (Exception e) {
+            Log.e("MainActivity", "Model inference failed", e);
             Toast.makeText(this, "Model inference failed", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private float[] runModelInference(ByteBuffer inputBuffer) throws IOException {
+        Interpreter.Options options = new Interpreter.Options();
+        options.setNumThreads(4);
+        options.setUseNNAPI(true);
+        Interpreter tflite = new Interpreter(loadModelFile("fruits.tflite"), options);
+
+        float[][] output = new float[1][206]; // Ensure matches model output
+        tflite.run(inputBuffer, output);
+        tflite.close();
+        return output[0];
+    }
+
+    private MappedByteBuffer loadModelFile(String modelName) throws IOException {
+        AssetFileDescriptor fileDescriptor = getAssets().openFd(modelName);
+        FileInputStream inputStream = new FileInputStream(fileDescriptor.getFileDescriptor());
+        FileChannel fileChannel = inputStream.getChannel();
+        long startOffset = fileDescriptor.getStartOffset();
+        long declaredLength = fileDescriptor.getDeclaredLength();
+        return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength);
     }
 
     private List<String> loadLabels(String filename) throws IOException {
@@ -169,5 +210,19 @@ public class MainActivity extends AppCompatActivity {
         }
         reader.close();
         return labelList;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
+                                           @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == PERMISSION_CODE) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+                startActivityForResult(cameraIntent, CAMERA_REQUEST_CODE);
+            } else {
+                Toast.makeText(this, "Camera permission is required", Toast.LENGTH_SHORT).show();
+            }
+        }
     }
 }
