@@ -184,7 +184,7 @@ public class MainActivity extends AppCompatActivity {
         Interpreter.Options options = new Interpreter.Options();
         options.setNumThreads(4);
         options.setUseNNAPI(true);
-        Interpreter tflite = new Interpreter(loadModelFile("fruits.tflite"), options);
+        Interpreter tflite = new Interpreter(loadModelFile("ml/fruits.tflite"), options);
 
         float[][] output = new float[1][206]; // Ensure matches model output
         tflite.run(inputBuffer, output);

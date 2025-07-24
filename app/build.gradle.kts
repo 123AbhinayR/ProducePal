@@ -54,6 +54,7 @@ android {
     }
 }
 
+
 val cameraxVersion = "1.4.2"
 
 dependencies {
@@ -67,14 +68,16 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
     implementation("androidx.camera:camera-view:1.2.3")
 
-    // TensorFlow Lite dependencies with exclusions to avoid conflict with litert-api
+    // TensorFlow Lite dependencies with conflict resolution
     implementation("org.tensorflow:tensorflow-lite:2.17.0") {
+        exclude(group = "org.tensorflow", module = "tensorflow-lite-api")
+    }
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4") {
+        exclude(group = "org.tensorflow", module = "tensorflow-lite-api")
         exclude(group = "com.google.ai.edge.litert", module = "litert-api")
     }
-    implementation("org.tensorflow:tensorflow-lite-support:0.4.3") {
-        exclude(group = "com.google.ai.edge.litert", module = "litert-api")
-    }
-    implementation("org.tensorflow:tensorflow-lite-metadata:0.4.3") {
+    implementation("org.tensorflow:tensorflow-lite-metadata:0.4.4") {
+        exclude(group = "org.tensorflow", module = "tensorflow-lite-api")
         exclude(group = "com.google.ai.edge.litert", module = "litert-api")
     }
 
