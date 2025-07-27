@@ -134,29 +134,21 @@ public class MainActivity extends AppCompatActivity {
             int[] intValues = new int[imageSize * imageSize];
             image.getPixels(intValues, 0, image.getWidth(), 0, 0, image.getWidth(), image.getHeight());
 
-            float[] mean = {103.939f, 116.779f, 123.68f}; // BGR mean for ResNet
             int pixel = 0;
             for (int i = 0; i < imageSize; i++) {
                 for (int j = 0; j < imageSize; j++) {
                     int val = intValues[pixel++];
-                    float r = ((val >> 16) & 0xFF);
-                    float g = ((val >> 8) & 0xFF);
-                    float b = (val & 0xFF);
+                    float r = ((val >> 16) & 0xFF) / 255.0f;
+                    float g = ((val >> 8) & 0xFF) / 255.0f;
+                    float b = (val & 0xFF) / 255.0f;
 
-                    byteBuffer.putFloat(b - mean[0]);
-                    byteBuffer.putFloat(g - mean[1]);
-                    byteBuffer.putFloat(r - mean[2]);
+                    byteBuffer.putFloat(r);
+                    byteBuffer.putFloat(g);
+                    byteBuffer.putFloat(b);
                 }
             }
 
             float[] confidences = runModelInference(byteBuffer);
-
-            // Convert logits to probabilities using softmax
-            float sum = 0;
-            for (float val : confidences) sum += Math.exp(val);
-            for (int i = 0; i < confidences.length; i++) {
-                confidences[i] = (float) Math.exp(confidences[i]) / sum;
-            }
 
             int maxIdx = 0;
             float maxConf = 0;
@@ -180,11 +172,12 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+
     private float[] runModelInference(ByteBuffer inputBuffer) throws IOException {
         Interpreter.Options options = new Interpreter.Options();
         options.setNumThreads(4);
         options.setUseNNAPI(true);
-        Interpreter tflite = new Interpreter(loadModelFile("ml/fruits.tflite"), options);
+        Interpreter tflite = new Interpreter(loadModelFile("ml/FruitsML.tflite"), options);
 
         float[][] output = new float[1][206]; // Ensure matches model output
         tflite.run(inputBuffer, output);
