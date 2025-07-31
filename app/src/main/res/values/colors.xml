@@ -2,4 +2,20 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="colorPrimary">#4285F4</color> <!-- Google Blue -->
+    <color name="colorPrimaryDark">#3367D6</color>
+    <color name="colorAccent">#34A853</color> <!-- Google Green -->
+    <color name="buttonColor">#1A73E8</color> <!-- Blue for buttons -->
+    <color name="buttonTextColor">#FFFFFF</color>
+    <color name="disabledButtonColor">#BDBDBD</color>
+    <color name="backgroundLight">#FAFAFA</color>
+    <color name="cardBackground">#FFFFFF</color>
+
+    <color name="primaryColor">#0B57D0</color> <!-- Google blue -->
+    <color name="accentColor">#34A853</color> <!-- Produce green -->
+    <color name="background">#FFFFFF</color>
+    <color name="surface">#F1F3F4</color>
+    <color name="textColor">#202124</color>
+    <color name="secondaryText">#5F6368</color>
+
 </resources>
