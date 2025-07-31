@@ -5,9 +5,11 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.AssetFileDescriptor;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.media.ThumbnailUtils;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Log;
 import android.widget.Button;
@@ -33,6 +35,12 @@ import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.List;
 
+import androidx.core.content.FileProvider;
+import java.io.File;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+
+
 public class MainActivity extends AppCompatActivity {
 
     private static final int CAMERA_REQUEST_CODE = 3;
@@ -45,6 +53,18 @@ public class MainActivity extends AppCompatActivity {
     int imageSize = 100;
     List<String> labels;
     String currentPrediction = null;
+
+    private Uri photoUri;
+    private File photoFile;
+
+    private File createImageFile() throws IOException {
+        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+        String imageFileName = "ProducePal_" + timeStamp;
+        File storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES);
+        return File.createTempFile(imageFileName, ".jpg", storageDir);
+    }
+
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -70,12 +90,22 @@ public class MainActivity extends AppCompatActivity {
 
         btnCamera.setOnClickListener(v -> {
             if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-                startActivityForResult(cameraIntent, CAMERA_REQUEST_CODE);
+                try {
+                    photoFile = createImageFile();
+                    photoUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", photoFile);
+
+                    Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+                    cameraIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoUri);
+                    cameraIntent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                    startActivityForResult(cameraIntent, CAMERA_REQUEST_CODE);
+                } catch (IOException e) {
+                    Toast.makeText(this, "Failed to create file", Toast.LENGTH_SHORT).show();
+                }
             } else {
                 ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, PERMISSION_CODE);
             }
         });
+
 
         btnGallery.setOnClickListener(v -> {
             Intent galleryIntent = new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
@@ -99,15 +129,26 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (resultCode == RESULT_OK && data != null) {
+
+        if (resultCode == RESULT_OK) {
             Bitmap image = null;
-            if (requestCode == CAMERA_REQUEST_CODE && data.getExtras() != null) {
-                image = (Bitmap) data.getExtras().get("data");
-                if (image != null) {
-                    int dimension = Math.min(image.getWidth(), image.getHeight());
-                    image = ThumbnailUtils.extractThumbnail(image, dimension, dimension);
+
+            if (requestCode == CAMERA_REQUEST_CODE) {
+                if (photoFile != null && photoFile.exists()) {
+                    image = BitmapFactory.decodeFile(photoFile.getAbsolutePath());
+
+                    // Save to gallery
+                    MediaStore.Images.Media.insertImage(
+                            getContentResolver(),
+                            image,
+                            "ProducePal_" + System.currentTimeMillis(),
+                            "Captured using ProducePal"
+                    );
+                } else {
+                    Toast.makeText(this, "Failed to load captured image", Toast.LENGTH_SHORT).show();
                 }
-            } else if (requestCode == GALLERY_REQUEST_CODE) {
+
+            } else if (requestCode == GALLERY_REQUEST_CODE && data != null) {
                 Uri dat = data.getData();
                 try {
                     image = MediaStore.Images.Media.getBitmap(this.getContentResolver(), dat);
@@ -118,13 +159,15 @@ public class MainActivity extends AppCompatActivity {
 
             if (image != null) {
                 imageView.setImageBitmap(image);
-                image = Bitmap.createScaledBitmap(image, imageSize, imageSize, false);
-                classifyImage(image);
+                Bitmap resizedImage = Bitmap.createScaledBitmap(image, imageSize, imageSize, false);
+                classifyImage(resizedImage);
             } else {
                 Toast.makeText(this, "Failed to load image", Toast.LENGTH_SHORT).show();
             }
         }
     }
+
+
 
     private void classifyImage(Bitmap image) {
         try {
